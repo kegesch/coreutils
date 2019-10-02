@@ -10,14 +10,27 @@ use std::{
     process
 };
 use std::fs::copy;
+use std::io::Read;
 
 fn main() {
     let yaml = load_yaml!("cp.yml");
     let matches = App::from_yaml(yaml).get_matches();
 
-    let source = matches.value_of("SOURCE").unwrap();
+    let source = matches.values_of("SOURCE").unwrap();
     let dest = matches.value_of("DEST").unwrap();
 
+    for val in source {
+        match cp(val, dest, &matches) {
+            Ok(_) => (),
+            Err(e) => {
+                eprintln!("cp: could not copy\n{}", e);
+                process::exit(1);
+            }
+        }
+    }
+}
+
+fn cp(source: &str, dest: &str, args: &ArgMatches) -> io::Result<()> {
     let source_path = Path::new(source);
     let destination_path = Path::new(dest);
 
@@ -32,18 +45,13 @@ fn main() {
     }
 
     let result = match source_path.is_file() {
-        true => copy_file(source_path, destination_path, &matches),
-        false => copy_directory(source_path, destination_path, &matches)
+        true => copy_file(source_path, destination_path, &args),
+        false => copy_directory(source_path, destination_path, &args)
     };
 
-    match result {
-        Ok(_) => (),
-        Err(e) => {
-            eprintln!("cp: could not copy\n{}", e);
-            process::exit(1);
-        }
-    }
+    return result
 }
+
 
 fn copy_directory(source: &Path, destination: &Path, args: &ArgMatches) -> io::Result<()> {
     // destination must be directoryname!
@@ -87,7 +95,43 @@ fn copy_file(filename: &Path, destination: &Path, args: &ArgMatches) -> io::Resu
 
 fn copy_file_to_file(filename: &Path, dest_filename: &Path, args: &ArgMatches) -> io::Result<()> {
     println!("Copy {} to {}", filename.display(), dest_filename.display());
-    fs::copy(filename, dest_filename);
+
+    let mut is_no_clobber = args.is_present("no-clobber");
+    let is_forced = args.is_present("force");
+    let is_interactive = args.is_present("interactive");
+
+    if is_forced || is_interactive {
+        is_no_clobber = false;
+    }
+    if dest_filename.exists() {
+        if is_forced {
+            match fs::OpenOptions::new().write(true)
+            .open(dest_filename) {
+                Ok(file) => (),
+                Err(_) => {
+                if is_interactive && interactive(dest_filename) {
+                fs::remove_file(dest_filename)?;
+                fs::copy(filename, dest_filename);
+                }
+                }
+            }
+        } else {
+            if !is_no_clobber && (is_interactive && interactive(dest_filename)) {
+                fs::copy(filename, dest_filename);
+            }
+        }
+    } else {
+        fs::copy(filename, dest_filename);
+    }
+
     Ok(())
 }
 
+fn interactive(filename: &Path) -> bool {
+    let name = filename.file_name().unwrap();
+    let name_str = name.to_str().unwrap();
+    println!("overwrite {}? (y/n [n])", name_str);
+    let mut buffer = String::new();
+    io::stdin().read_line(&mut buffer);
+    buffer.starts_with("y")
+}

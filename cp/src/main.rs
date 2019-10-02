@@ -30,6 +30,7 @@ fn main() {
     }
 }
 
+/// Copies `source`to `destination`.
 fn cp(source: &str, dest: &str, args: &ArgMatches) -> io::Result<()> {
     let source_path = Path::new(source);
     let destination_path = Path::new(dest);
@@ -52,7 +53,7 @@ fn cp(source: &str, dest: &str, args: &ArgMatches) -> io::Result<()> {
     return result
 }
 
-
+/// Copies the content of the directory `source` to the `destination` directory.
 fn copy_directory(source: &Path, destination: &Path, args: &ArgMatches) -> io::Result<()> {
     // destination must be directoryname!
     println!("Copy directory");
@@ -79,6 +80,8 @@ fn copy_directory(source: &Path, destination: &Path, args: &ArgMatches) -> io::R
     Ok(())
 }
 
+/// Copies a file with name `filename` to the `destination`.
+/// While `destination` can either be a file or a directory.
 fn copy_file(filename: &Path, destination: &Path, args: &ArgMatches) -> io::Result<()> {
     // destination could be a directory or a filename
     println!("Copy file");
@@ -93,6 +96,7 @@ fn copy_file(filename: &Path, destination: &Path, args: &ArgMatches) -> io::Resu
     Ok(())
 }
 
+/// Copies file with `filename` to file location with name `dest_filename` respecting `args`
 fn copy_file_to_file(filename: &Path, dest_filename: &Path, args: &ArgMatches) -> io::Result<()> {
     println!("Copy {} to {}", filename.display(), dest_filename.display());
 
@@ -109,10 +113,10 @@ fn copy_file_to_file(filename: &Path, dest_filename: &Path, args: &ArgMatches) -
             .open(dest_filename) {
                 Ok(file) => (),
                 Err(_) => {
-                if is_interactive && interactive(dest_filename) {
-                fs::remove_file(dest_filename)?;
-                fs::copy(filename, dest_filename);
-                }
+                    if is_interactive && interactive(dest_filename) {
+                        fs::remove_file(dest_filename)?;
+                        fs::copy(filename, dest_filename);
+                    }
                 }
             }
         } else {
@@ -127,10 +131,14 @@ fn copy_file_to_file(filename: &Path, dest_filename: &Path, args: &ArgMatches) -
     Ok(())
 }
 
-fn interactive(filename: &Path) -> bool {
-    let name = filename.file_name().unwrap();
+/// Requests the user if the `file` should be overwritten.
+/// Returns `true` if the user answers with yes, else `false`
+fn interactive(file: &Path) -> bool {
+    let name = file.file_name().unwrap();
     let name_str = name.to_str().unwrap();
+
     println!("overwrite {}? (y/n [n])", name_str);
+
     let mut buffer = String::new();
     io::stdin().read_line(&mut buffer);
     buffer.starts_with("y")

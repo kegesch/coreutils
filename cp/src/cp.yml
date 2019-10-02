@@ -1,0 +1,52 @@
+name: cp
+version: "0.0.0"
+author: Jonas Geschke <mail@yonny.de>
+about: "Copy files and directories.\nCopy SOURCE to DEST/DIRECTORY"
+args:
+    - SOURCE:
+        help: Name of the file(s) to copy.
+        required: true
+        multiple: true
+    - DEST:
+        help: Name of destination file or directory to copy the file(s).
+        required: true
+    - force:
+          help: If an existing destination file cannot be opened, remove it and try again (redundant if the -n option is used)
+          required: false
+          short: f
+          long: force
+    - interactive:
+        help: Prompt berfore overwrite (overrides a previous -n option)
+        required: false
+        short: i
+        long: interactive
+    - no-clobber:
+          help: Do not overwrite an existing file (overrides a previous -i option)
+          required: false
+          short: n
+          long: no-clobber
+    - link:
+          help: Link files instead of copying
+          required: false
+          short: l
+          long: link
+    - dereference:
+          help: Always follow symbolic links in SOURCE
+          required: false
+          short: L
+          long: dereference
+    - no-dereference:
+          help: Never follow symbolic links in SOURCE
+          required: false
+          short: P
+          long: no-dereference
+    - update:
+          help: Copy only when the SOURCE file is newer than the destination file or when the destination file is missing
+          required: false
+          short: u
+          long: update
+    - recursive:
+          help: Copy directories recursively
+          required: false
+          short: r
+          long: recursive

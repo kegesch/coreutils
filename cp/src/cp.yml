@@ -1,5 +1,5 @@
 name: cp
-version: "0.0.0"
+version: "0.1.0"
 author: Jonas Geschke <mail@yonny.de>
 about: "Copy files and directories.\nCopy SOURCE to DEST/DIRECTORY"
 args:
@@ -11,42 +11,37 @@ args:
         help: Name of destination file or directory to copy the file(s).
         required: true
     - force:
-          help: If an existing destination file cannot be opened, remove it and try again (redundant if the -n option is used)
-          required: false
-          short: f
-          long: force
+        help: If an existing destination file cannot be opened, remove it and try again (redundant if the -n option is used)
+        required: false
+        short: f
+        long: force
     - interactive:
         help: Prompt berfore overwrite (overrides a previous -n option)
         required: false
         short: i
         long: interactive
     - no-clobber:
-          help: Do not overwrite an existing file (overrides a previous -i option)
-          required: false
-          short: n
-          long: no-clobber
-    - link:
-          help: Link files instead of copying
-          required: false
-          short: l
-          long: link
+        help: Do not overwrite an existing file (overrides a previous -i option)
+        required: false
+        short: n
+        long: no-clobber
     - dereference:
-          help: Always follow symbolic links in SOURCE
-          required: false
-          short: L
-          long: dereference
+        help: Follows symbolic links. If the -R option is specified, all symbolic links are followed.
+        required: false
+        short: L
+        long: dereference
     - no-dereference:
-          help: Never follow symbolic links in SOURCE
-          required: false
-          short: P
-          long: no-dereference
-    - update:
-          help: Copy only when the SOURCE file is newer than the destination file or when the destination file is missing
-          required: false
-          short: u
-          long: update
+        help: Never follow symbolic links in SOURCE. If the -R option is specified, no symbolic links are followed. This	is the default.
+        required: false
+        short: P
+        long: no-dereference
+    - preserve:
+        help: Causes cp to preserve in the copy as many of the modification time, access time, file flags, file mode, user ID, group ID, and extended attributes, as allowed by permissions.
+        required: false
+        short: p
+        long: preserve
     - recursive:
-          help: Copy directories recursively
-          required: false
-          short: r
-          long: recursive
+        help: Copy directories recursively
+        required: false
+        short: R
+        long: recursive

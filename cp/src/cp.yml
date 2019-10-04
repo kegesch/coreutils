@@ -21,7 +21,7 @@ args:
         short: i
         long: interactive
     - no-clobber:
-        help: Do not overwrite an existing file (overrides a previous -i option)
+        help: Do not overwrite an existing file (overrides a previous -i option).
         required: false
         short: n
         long: no-clobber
@@ -30,6 +30,11 @@ args:
         required: false
         short: L
         long: dereference
+    - dereference-cmd:
+        help: If the -R option is also specified, symbolic links on the command line are followed. Symbolic links encountered in the tree traversal are not followed.
+        required: false
+        short: H
+        long: dereference-cmd
     - no-dereference:
         help: Never follow symbolic links in SOURCE. If the -R option is specified, no symbolic links are followed. This	is the default.
         required: false
@@ -41,7 +46,12 @@ args:
         short: p
         long: preserve
     - recursive:
-        help: Copy directories recursively
+        help: Copy directories recursively.
         required: false
         short: R
         long: recursive
+    - verbose:
+        help: Display the source and destination after each copy.
+        required: false
+        short: v
+        long: verbose

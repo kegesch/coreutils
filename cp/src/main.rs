@@ -6,15 +6,22 @@ use clap::{
 use std::{
     fs,
     io,
-    path::Path,
+    path::{
+        Path,
+        PathBuf
+    },
     process
 };
-use std::fs::{copy, Metadata};
-use std::io::Read;
+use symlink::{
+    symlink_file,
+    symlink_dir
+};
 
 // TODO -L
 // TODO -P
 // TODO -p
+// TODO -a (= -RpP)
+// TODO -H
 fn main() {
     let yaml = load_yaml!("cp.yml");
     let matches = App::from_yaml(yaml).get_matches();
@@ -22,8 +29,11 @@ fn main() {
     let source = matches.values_of("SOURCE").unwrap();
     let dest = matches.value_of("DEST").unwrap();
 
+    let destination_path = Path::new(dest);
+
     for val in source {
-        match cp(val, dest, &matches) {
+        let source_path = Path::new(val);
+        match cp(source_path, destination_path, &matches) {
             Ok(_) => (),
             Err(e) => {
                 eprintln!("cp: could not copy\n{}", e);
@@ -34,56 +44,78 @@ fn main() {
 }
 
 /// Copies `source`to `destination`.
-fn cp(source: &str, dest: &str, args: &ArgMatches) -> io::Result<()> {
-    let source_path = Path::new(source);
-    let destination_path = Path::new(dest);
+fn cp(source: &Path, dest: &Path, args: &ArgMatches) -> io::Result<()> {
 
-    if !source_path.exists() {
+    if !source.exists() {
         eprintln!("cp: source does not exist");
         process::exit(1);
     }
 
-    if destination_path.is_dir() && !destination_path.exists() {
+    if dest.is_dir() && !dest.exists() {
         eprintln!("cp: destination is not a directory");
         process::exit(1);
     }
 
-    let result = match (should_dereference(&args) && is_symlink(source_path)) || source_path.is_file() {
-        true => copy_file(source_path, destination_path, &args),
-        false => copy_directory(source_path, destination_path, &args)
-    };
+    if source.is_file() {
+        copy_file(source, dest, &args);
+    } else if source.is_dir() {
+        copy_directory(source, dest, &args);
+    }
 
-    return result
+    Ok(())
 }
 
 /// Copies the content of the directory `source` to the `destination` directory.
 fn copy_directory(source: &Path, destination: &Path, args: &ArgMatches) -> io::Result<()> {
-    // destination must be directoryname!
-    println!("Copy directory");
-
     let is_recursive = args.is_present("recursive");
+    let is_dereference = args.is_present("dereference");
 
     if !destination.is_dir() {
-        eprintln!("cp: destination must be a directory");
+        eprintln!("cp: destination {} must be a directory", destination.display());
         process::exit(1);
     }
 
-    for entry in source.read_dir()? {
+    if !is_recursive {
+        println!("cp: {} is a directory (not copied).", source.display());
+        return Ok(());
+    }
+
+    // normal behaviour is copies symlinks same as -P
+    // -L follows the Links
+
+    if is_symlink(source) {
+        if !is_dereference {
+            let target = source.read_link()?;
+            let dest = destination.join(Path::new(source.file_name()?));
+            symlink_dir(target, dest);
+        } else {
+            let deref_source = source.read_link()?;
+            copy_directory_content(deref_source.as_path(), destination, args);
+        }
+    } else {
+        copy_directory_content(deref_source.as_path(), destination, args);
+    }
+
+    Ok(())
+}
+
+/// Copies files from `dir` to `dest`.
+fn copy_directory_content(dir: &Path, dest: &Path, args: &ArgMatches) -> io::Result<()> {
+    for entry in dir.read_dir()? {
         let entry = entry?;
         let path_buf = entry.path();
-        let mut path = path_buf.as_path();
-        path = get_path(path, args);
+        let path = path_buf.as_path();
 
         if path.is_dir() {
             if is_recursive {
                 let dirname = path.file_name().unwrap();
-                let new_destination = destination.join(dirname);
+                let new_destination = dest.join(dirname);
                 let new_dest_path = new_destination.as_path();
                 fs::create_dir(new_dest_path);
-                copy_directory(path, new_dest_path, args);
+                cp(path, new_dest_path, args);
             }
         } else {
-            copy_file(path, destination, args);
+            cp(path, dest, args);
         }
     }
 
@@ -95,6 +127,9 @@ fn copy_directory(source: &Path, destination: &Path, args: &ArgMatches) -> io::R
 fn copy_file(filename: &Path, destination: &Path, args: &ArgMatches) -> io::Result<()> {
     // destination could be a directory or a filename
     println!("Copy file");
+
+    // normal behaviour is symlinks are followed
+
     if destination.is_dir() {
         let source_name = filename.file_name().unwrap();
         let path_source_name = Path::new(source_name);
@@ -106,10 +141,40 @@ fn copy_file(filename: &Path, destination: &Path, args: &ArgMatches) -> io::Resu
     Ok(())
 }
 
+/// Copies a symlink `filename` to `dest_filename`
+fn copy_symlink(filename: &Path, dest_filename: &Path, args: &ArgMatches) -> io::Result<()> {
+
+    let mut dest_path_buf = PathBuf::from(filename);
+
+    if dest_filename.is_dir() {
+        let source_name = filename.file_name().unwrap();
+        let path_source_name = Path::new(source_name);
+        dest_path_buf = dest_filename.join(path_source_name);
+    }
+
+    let dest_path = dest_path_buf.as_path();
+
+    println!("Copy symlink {} to {}", filename.display(), dest_filename.display());
+    let target_path_buf = filename.read_link()?;
+    let target_path_rel = target_path_buf.canonicalize()?;
+    let target_path = target_path_rel.as_path();
+
+    println!("creating symlink at {} pointing to {}", dest_path.display(), target_path.display());
+
+    let res = match filename.is_file() {
+        true => symlink_file(target_path, dest_path),
+        false => symlink_dir(target_path, dest_path)
+    };
+    println!("was successful: {:?}", res);
+
+    res
+}
+
 /// Copies file with `filename` to file location with name `dest_filename` respecting `args`
 fn copy_file_to_file(filename: &Path, dest_filename: &Path, args: &ArgMatches) -> io::Result<()> {
     println!("Copy {} to {}", filename.display(), dest_filename.display());
 
+    // TODO make sure file filename and dest_filename are the same, copy fails
     // TODO respect order of -n -f and -i
     // TODO check if copy respects its metadata
     let mut is_no_clobber = args.is_present("no-clobber");
@@ -130,20 +195,44 @@ fn copy_file_to_file(filename: &Path, dest_filename: &Path, args: &ArgMatches) -
                 Err(_) => {
                     if is_interactive && interactive(dest_filename) {
                         fs::remove_file(dest_filename)?;
-                        fs::copy(real_path, dest_filename);
+                        copy_or_link(real_path, dest_filename, args);
                     }
                 }
             }
         } else {
-            if !is_no_clobber && (is_interactive && interactive(dest_filename)) {
-                fs::copy(real_path, dest_filename);
+            println!("Target alread exists: no-clobber {}, is-interactive {}", is_no_clobber, is_interactive);
+            if is_interactive && interactive(dest_filename) || !is_no_clobber {
+                copy_or_link(real_path, dest_filename, args);
             }
         }
     } else {
-        fs::copy(real_path, dest_filename);
+        copy_or_link(real_path, dest_filename, args);
     }
 
     Ok(())
+}
+
+/// Copies a file or creates a symlink
+fn copy_or_link<A: AsRef<Path>, B: AsRef<Path>>(from: A, to: B, args: &ArgMatches)-> io::Result<u64> {
+    let from_path: &Path = from.as_ref();
+    let to_path: &Path = to.as_ref();
+
+    if args.is_present("verbose") {
+        println!("cp: {} -> {}", from_path.display(), to_path.display());
+    }
+
+    if is_symlink(from_path) && !should_dereference(args) {
+        let target_path_buf = from_path.read_link()?;
+        let target_path_rel = target_path_buf.canonicalize()?;
+        let target_path = target_path_rel.as_path();
+
+        println!("target is relative {} or absolute {}", target_path.is_relative(), target_path.is_absolute());
+        println!("creating symlink at {} pointing to {}", to_path.display(), target_path.display());
+        let res = symlink::symlink_auto(target_path, from_path);
+        println!("was successful: {:?}", res);
+    } {
+        fs::copy(from_path, to_path)
+    }
 }
 
 /// Requests the user if the `file` should be overwritten.
@@ -155,7 +244,12 @@ fn interactive(file: &Path) -> bool {
     println!("overwrite {}? (y/n [n])", name_str);
 
     let mut buffer = String::new();
-    io::stdin().read_line(&mut buffer);
+    match io::stdin().read_line(&mut buffer) {
+        Ok(_) => {},
+        Err(_) => {
+            return false;
+        }
+    }
     buffer.starts_with("y")
 }
 
@@ -183,32 +277,15 @@ fn should_dereference(args: &ArgMatches) -> bool {
 
 /// Returns the Path to `file`. If `file` is a symlink and dereferences is set, it returns the dereferenced Path.
 /// If not it returns `file`.
-fn get_path<'a>(file: &'a Path, args: &ArgMatches) -> &'a Path {
+fn get_path(file:  &Path, args: &ArgMatches) -> PathBuf{
     if should_dereference(args) && is_symlink(file) {
         if let Ok(path_buf) = file.read_link() {
-            let path = path_buf.as_path();
-            return path;
+            return path_buf;
         } else {
             eprintln!("cp: could not read link {}", file.to_str().unwrap());
-            return file;
+            return PathBuf::from(file);
         }
     } else {
-        return file;
-    }
-}
-
-fn is_dir(file: &Path, args: &ArgMatches) -> bool {
-    if should_dereference(args) && is_symlink(file) {
-        return get_path(file, args).is_dir();
-    } else {
-        return file.is_dir();
-    }
-}
-
-fn is_file(file: &Path, args: &ArgMatches) -> bool {
-    if should_dereference(args) && is_symlink(file) {
-        return get_path(file, args).is_file();
-    } else {
-        return file.is_file();
+        return PathBuf::from(file);
     }
 }

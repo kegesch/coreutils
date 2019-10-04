@@ -30,16 +30,31 @@ args:
         required: false
         short: L
         long: dereference
+        conflicts_with:
+            - dereference-cmd
+            - no-dereference
+        requires:
+            - recursive
     - dereference-cmd:
         help: If the -R option is also specified, symbolic links on the command line are followed. Symbolic links encountered in the tree traversal are not followed.
         required: false
         short: H
         long: dereference-cmd
+        conflicts_with:
+            - no-dereference
+            - dereference
+        requires:
+            - recursive
     - no-dereference:
         help: Never follow symbolic links in SOURCE. If the -R option is specified, no symbolic links are followed. This	is the default.
         required: false
         short: P
         long: no-dereference
+        conflicts_with:
+            - dereference-cmd
+            - dereference
+        requires:
+            - recursive
     - preserve:
         help: Causes cp to preserve in the copy as many of the modification time, access time, file flags, file mode, user ID, group ID, and extended attributes, as allowed by permissions.
         required: false
@@ -55,3 +70,19 @@ args:
         required: false
         short: v
         long: verbose
+    - archive:
+        help: Archive mode. Same as -RpP.
+        required: false
+        short: a
+        long: archive
+groups:
+    - fin:
+        args:
+            - force
+            - no-clobber
+            - interactive
+    - recursive:
+        args:
+            - dereference
+            - no-dereference
+            - dereference-cmd

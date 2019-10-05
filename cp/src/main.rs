@@ -17,11 +17,6 @@ use symlink::{
     symlink_dir
 };
 
-// TODO -L
-// TODO -P
-// TODO -p
-// TODO -a (= -RpP)
-// TODO -H
 fn main() {
     let yaml = load_yaml!("cp.yml");
     let matches = App::from_yaml(yaml).get_matches();
@@ -33,7 +28,7 @@ fn main() {
 
     for val in source {
         let source_path = Path::new(val);
-        match cp(source_path, destination_path, &matches) {
+        match cp(source_path, destination_path, &matches, true) {
             Ok(_) => (),
             Err(e) => {
                 eprintln!("cp: could not copy\n{}", e);
@@ -44,7 +39,7 @@ fn main() {
 }
 
 /// Copies `source`to `destination`.
-fn cp(source: &Path, dest: &Path, args: &ArgMatches) -> io::Result<()> {
+fn cp(source: &Path, dest: &Path, args: &ArgMatches, from_cmd: bool) -> io::Result<()> {
 
     if !source.exists() {
         eprintln!("cp: source does not exist");
@@ -56,20 +51,34 @@ fn cp(source: &Path, dest: &Path, args: &ArgMatches) -> io::Result<()> {
         process::exit(1);
     }
 
+    if source.eq(dest) {
+        println!("cp: {} and {} are identical (not copied).", source.display(), dest.display());
+        return Ok(());
+    }
+
     if source.is_file() {
-        copy_file(source, dest, &args);
+        copy_file(source, dest, &args, from_cmd);
     } else if source.is_dir() {
-        copy_directory(source, dest, &args);
+        copy_directory(source, dest, &args, from_cmd);
     }
 
     Ok(())
 }
 
 /// Copies the content of the directory `source` to the `destination` directory.
-fn copy_directory(source: &Path, destination: &Path, args: &ArgMatches) -> io::Result<()> {
-    let is_recursive = args.is_present("recursive");
+fn copy_directory(source: &Path, destination: &Path, args: &ArgMatches, from_cmd: bool) -> io::Result<()> {
+    let mut is_recursive = args.is_present("recursive");
     let is_dereference = args.is_present("dereference");
-    let is_no_dereference = args.is_present("no-dereference");
+    let mut is_no_dereference = args.is_present("no-dereference");
+    let mut _is_preserve = args.is_present("preserve");
+    let is_deref_cmd = args.is_present("dereference-cmd");
+    let is_archive = args.is_present("archive");
+
+    if is_archive {
+        is_recursive = true;
+        is_no_dereference = true;
+        _is_preserve = true;
+    }
 
     if !destination.is_dir() {
         eprintln!("cp: destination {} must be a directory", destination.display());
@@ -85,17 +94,32 @@ fn copy_directory(source: &Path, destination: &Path, args: &ArgMatches) -> io::R
     // -L follows the Links
 
     if is_symlink(source) {
-        if !is_dereference || is_no_dereference {
+        let dereference = is_dereference || (is_deref_cmd && from_cmd);
+
+        if !dereference || is_no_dereference {
             let target = source.read_link()?;
             let filename = source.file_name().unwrap();
             let dest = destination.join(Path::new(filename));
-            symlink_dir(target, dest);
+
+            if dest.exists() {
+                eprintln!("cp: cannot overwrite directory {} with non-directory {}", dest.display(), source.display());
+            } else {
+                symlink_dir(target, dest);
+            }
         } else {
             let deref_source = source.read_link()?;
-            copy_directory_content(deref_source.as_path(), destination, args);
+            let dirname = source.file_name().unwrap();
+            let new_dir = destination.join(dirname);
+            let new_dir_path = new_dir.as_path();
+            fs::create_dir(new_dir_path);
+            copy_directory_content(deref_source.as_path(), new_dir_path, args);
         }
     } else {
-        copy_directory_content(source, destination, args);
+        let dirname = source.file_name().unwrap();
+        let new_dir = destination.join(dirname);
+        let new_dir_path = new_dir.as_path();
+        fs::create_dir(new_dir_path);
+        copy_directory_content(source, new_dir_path, args);
     }
 
     Ok(())
@@ -113,10 +137,10 @@ fn copy_directory_content(dir: &Path, dest: &Path, args: &ArgMatches) -> io::Res
             let new_destination = dest.join(dirname);
             let new_dest_path = new_destination.as_path();
             fs::create_dir(new_dest_path);
-            // TODO make sure that the new dir has the same mode as source dir
-            cp(path, new_dest_path, args);
+            // TODO copy metadata if preserved
+            cp(path, new_dest_path, args, false);
         } else {
-            cp(path, dest, args);
+            cp(path, dest, args, false);
         }
     }
 
@@ -125,10 +149,19 @@ fn copy_directory_content(dir: &Path, dest: &Path, args: &ArgMatches) -> io::Res
 
 /// Copies a file with name `filename` to the `destination`.
 /// While `destination` can either be a file or a directory.
-fn copy_file(source: &Path, destination: &Path, args: &ArgMatches) -> io::Result<()> {
-    let is_recursive = args.is_present("recursive");
-    let is_dereference = args.is_present("dereference");
-    let is_no_dereference = args.is_present("no-dereference");
+fn copy_file(source: &Path, destination: &Path, args: &ArgMatches, _from_cmd: bool) -> io::Result<()> {
+    let mut is_recursive = args.is_present("recursive");
+    // let is_dereference = args.is_present("dereference");
+    let mut is_no_dereference = args.is_present("no-dereference");
+    let is_no_clobber = args.is_present("no-clobber");
+    let mut is_preserve = args.is_present("preserve");
+    let is_archive = args.is_present("archive");
+
+    if is_archive {
+        is_recursive = true;
+        is_no_dereference = true;
+        is_preserve = true;
+    }
 
     // normal behaviour is symlinks are followed
 
@@ -141,8 +174,11 @@ fn copy_file(source: &Path, destination: &Path, args: &ArgMatches) -> io::Result
 
     if is_symlink(source) {
         if is_recursive || is_no_dereference {
-            let target = source.read_link()?;
-            symlink_file(target, dest);
+            let dest_ref = dest.as_path();
+            if !is_no_clobber {
+                fs::remove_file(dest_ref);
+            }
+            symlink_copy(source, dest_ref, is_preserve);
         } else {
             let source_deref = source.read_link()?;
             copy_file_to_file(source_deref.as_path(), dest.as_path(), args);
@@ -159,41 +195,62 @@ fn copy_file_to_file(filename: &Path, dest_filename: &Path, args: &ArgMatches) -
     if args.is_present("verbose") {
         println!("cp: {} -> {}", filename.display(), dest_filename.display());
     }
-    // TODO make sure file filename and dest_filename are the same, copy fails
-    // TODO respect order of -n -f and -i
-    // TODO check if copy respects its metadata
+
     let is_no_clobber = args.is_present("no-clobber");
     let is_forced = args.is_present("force");
     let is_interactive = args.is_present("interactive");
+    let is_preserve = args.is_present("preserve");
 
     let mut result = Ok(0);
 
     if dest_filename.exists() {
         if is_forced {
             fs::remove_file(dest_filename)?;
-            result = fs::copy(filename, dest_filename);
-        }
-        if is_no_clobber {
+            result = file_copy(filename, dest_filename, is_preserve);
+        } else if is_no_clobber {
             // DO NOT OVERWRITE
             return Ok(0);
-        }
-        if is_interactive && interactive(dest_filename) {
-            result = fs::copy(filename, dest_filename);
+        } else if is_interactive {
+            if interactive(dest_filename) {
+                result = file_copy(filename, dest_filename, is_preserve);
+            }
+        } else {
+            result = file_copy(filename, dest_filename, is_preserve);
         }
     } else {
-        result = fs::copy(filename, dest_filename);
+        result = file_copy(filename, dest_filename, is_preserve);
     }
 
     result
 }
 
+/// copies a file from `from` to `to`
+fn file_copy<A: AsRef<Path>, B: AsRef<Path>>(from: A, to: B, preserve: bool) -> io::Result<u64> {
+    if preserve {
+        fs::copy(from, to)
+    } else {
+        let mut source_file = fs::File::open(from)?;
+        let mut new_file = fs::File::create(to)?;
+
+        io::copy(&mut source_file, &mut new_file)
+    }
+}
+/// copies a symlink from `from` to `to`
+fn symlink_copy<A: AsRef<Path>, B: AsRef<Path>>(from: A, to: B, preserve: bool) -> io::Result<()> {
+    let target_path = from.as_ref();
+    let target = target_path.read_link()?;
+
+    if preserve {
+        // TODO preserve metadata of symlink
+    }
+
+    symlink_file(target, to)
+}
+
 /// Requests the user if the `file` should be overwritten.
 /// Returns `true` if the user answers with yes, else `false`
 fn interactive(file: &Path) -> bool {
-    let name = file.file_name().unwrap();
-    let name_str = name.to_str().unwrap();
-
-    println!("overwrite {}? (y/n [n])", name_str);
+    print!("overwrite {}? (y/n [n])", file.display());
 
     let mut buffer = String::new();
     match io::stdin().read_line(&mut buffer) {

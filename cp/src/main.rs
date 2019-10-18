@@ -171,7 +171,7 @@ fn copy_directory(source: &Source, dest: &Dest, args: &ArgMatches, from_cmd: boo
                 eprintln!("cp: cannot overwrite directory {} with non-directory {}", new_dest.display(), source.display());
             } else {
                 if args.is_present("verbose") {
-                    println!("cp: {}", context);
+                    println!("{}", context);
                 }
                 // TODO preserve
                 symlink_dir(target, new_dest);
@@ -211,7 +211,7 @@ fn copy_directory(source: &Source, dest: &Dest, args: &ArgMatches, from_cmd: boo
 fn copy_directory_content(dir: &Source, dest: &Dest, args: &ArgMatches) -> CopyResult {
     let context = CopyContext::new(dir, dest);
     if args.is_present("verbose") {
-        println!("cp: {}", context);
+        println!("{}", context);
     }
     for entry in dir.read_dir().unwrap() {
         let entry = entry.unwrap();
@@ -341,7 +341,7 @@ fn file_copy(from: &Source, to: &Dest, args: &ArgMatches) -> CopyResult {
     let context = CopyContext::new(from, to);
 
     if args.is_present("verbose") {
-        println!("cp: {}", context);
+        println!("{}", context);
     }
 
     if args.is_present("preserve") {
